@@ -2,19 +2,23 @@ import { GetStaticPaths, GetStaticProps } from 'next';
 import Prismic from '@prismicio/client';
 import PrismicDOM from 'prismic-dom';
 import { FiCalendar, FiClock, FiUser } from 'react-icons/fi';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
 
 import { useRouter } from 'next/router';
-import { Fragment, useMemo } from 'react';
+import { Fragment, useEffect, useMemo } from 'react';
+import ApiSearchResponse from '@prismicio/client/types/ApiSearchResponse';
 import { getPrismicClient } from '../../services/prismic';
 import Header from '../../components/Header';
+import { PreviewButton } from '../../components/PreviewButton';
+import { NeighborhoodPost, PostFooter } from '../../components/PostFooter';
 
 import commonStyles from '../../styles/common.module.scss';
 import styles from './post.module.scss';
 
 interface Post {
   first_publication_date: string | null;
+  last_publication_date: string | null;
   data: {
     title: string;
     banner: {
@@ -32,9 +36,31 @@ interface Post {
 
 interface PostProps {
   post: Post;
+  preview: boolean;
+  nextPost: NeighborhoodPost;
+  previousPost: NeighborhoodPost;
 }
 
-export default function Post({ post }: PostProps): JSX.Element {
+export default function Post({
+  post,
+  preview,
+  nextPost,
+  previousPost,
+}: PostProps): JSX.Element {
+  useEffect(() => {
+    const script = document.createElement('script');
+    const anchor = document.getElementById('inject-comments-for-uterances');
+    script.setAttribute('src', 'https://utteranc.es/client.js');
+    script.setAttribute('crossorigin', 'anonymous');
+    script.setAttribute(
+      'repo',
+      'rfmiotto/Ignite-ReactJS-Desafio-01-Criando-projeto-do-zero'
+    );
+    script.setAttribute('issue-term', 'pathname');
+    script.setAttribute('theme', 'github-dark');
+    anchor.appendChild(script);
+  }, []);
+
   const router = useRouter();
 
   const estimatedReadTime = useMemo(() => {
@@ -89,7 +115,7 @@ export default function Post({ post }: PostProps): JSX.Element {
             <div>
               <FiCalendar />
               <span style={{ textTransform: 'capitalize' }}>
-                {format(new Date(post.first_publication_date), 'dd MMM yyyy', {
+                {format(parseISO(post.first_publication_date), 'dd MMM yyyy', {
                   locale: ptBR,
                 })}
               </span>
@@ -105,6 +131,16 @@ export default function Post({ post }: PostProps): JSX.Element {
               <span>{estimatedReadTime} min</span>
             </div>
           </section>
+
+          <i>
+            {format(
+              parseISO(post.last_publication_date),
+              "'* editado em 'dd MMM yyyy', às 'hh:mm",
+              {
+                locale: ptBR,
+              }
+            )}
+          </i>
         </section>
 
         <article>
@@ -120,6 +156,14 @@ export default function Post({ post }: PostProps): JSX.Element {
               />
             </Fragment>
           ))}
+
+          <hr />
+
+          <PostFooter nextPost={nextPost} previousPost={previousPost} />
+
+          <div id="inject-comments-for-uterances" />
+
+          <PreviewButton preview={preview} />
         </article>
       </main>
     </>
@@ -150,18 +194,68 @@ export const getStaticPaths: GetStaticPaths = async () => {
   };
 };
 
-export const getStaticProps: GetStaticProps<PostProps> = async ({ params }) => {
+function formatNeighborhoodPost(
+  post: ApiSearchResponse,
+  slug: string | string[]
+): NeighborhoodPost | null {
+  console.log(slug);
+  console.log(post.results[0].uid);
+  return slug === post.results[0].uid
+    ? null
+    : {
+        title: post.results[0]?.data?.title,
+        uid: post.results[0]?.uid,
+      };
+}
+
+export const getStaticProps: GetStaticProps<PostProps> = async ({
+  params,
+  preview = false,
+}) => {
   const { slug } = params;
   const prismic = getPrismicClient();
 
   // const response = await prismic.getByUID('post', String(slug), {});
   const response = await prismic.getByUID('spacetravelingposts', String(slug), {
-    fetch: ['post.title', 'post.banner', 'post.author', 'post.content'],
+    fetch: [
+      'document.title',
+      'document.banner',
+      'document.author',
+      'document.content',
+    ],
   });
+
+  const responsePreviousPost = await prismic.query(
+    Prismic.predicates.at('document.type', 'spacetravelingposts'),
+    {
+      pageSize: 1,
+      after: slug,
+      orderings: '[document.first_publication_date]',
+    }
+  );
+
+  const responseNextPost = await prismic.query(
+    Prismic.predicates.at('document.type', 'spacetravelingposts'),
+    {
+      pageSize: 1,
+      after: slug,
+      orderings: '[document.first_publication_date desc]',
+    }
+  );
+
+  const nextPost = formatNeighborhoodPost(responseNextPost, slug);
+  const previousPost = formatNeighborhoodPost(responsePreviousPost, slug);
+
+  console.log(responseNextPost);
+  console.log(responsePreviousPost);
+  console.log(slug);
 
   return {
     props: {
       post: response,
+      preview,
+      nextPost,
+      previousPost,
     },
     revalidate: 60 * 30, // 30 min
   };

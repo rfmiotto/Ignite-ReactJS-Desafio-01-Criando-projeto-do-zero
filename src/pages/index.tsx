@@ -7,6 +7,7 @@ import { FiCalendar, FiUser } from 'react-icons/fi';
 import ApiSearchResponse from '@prismicio/client/types/ApiSearchResponse';
 import Prismic from '@prismicio/client';
 import { getPrismicClient } from '../services/prismic';
+import { PreviewButton } from '../components/PreviewButton';
 
 import styles from './home.module.scss';
 import commonStyles from '../styles/common.module.scss';
@@ -28,9 +29,13 @@ interface PostPagination {
 
 interface HomeProps {
   postsPagination: PostPagination;
+  preview: boolean;
 }
 
-export default function Home({ postsPagination }: HomeProps): JSX.Element {
+export default function Home({
+  postsPagination,
+  preview,
+}: HomeProps): JSX.Element {
   const [posts, setPosts] = useState<Post[]>(postsPagination.results);
   const [nextPage, setNextPage] = useState<string | null>(
     postsPagination.next_page
@@ -90,26 +95,33 @@ export default function Home({ postsPagination }: HomeProps): JSX.Element {
             Carregar mais posts
           </button>
         )}
+
+        <PreviewButton preview={preview} />
       </main>
     </div>
   );
 }
 
-export const getStaticProps: GetStaticProps<HomeProps> = async () => {
+export const getStaticProps: GetStaticProps<HomeProps> = async ({
+  preview = false,
+  previewData,
+}) => {
   const prismic = getPrismicClient();
 
   const postsResponse = await prismic.query(
     [Prismic.predicates.at('document.type', 'spacetravelingposts')],
     {
-      fetch: ['post.title', 'post.subtitle', 'post.author'],
+      fetch: ['document.title', 'document.subtitle', 'document.author'],
       orderings: '[document.first_publication_date]',
       pageSize: 2,
+      ref: previewData?.ref ?? null,
     }
   );
 
   return {
     props: {
       postsPagination: postsResponse,
+      preview,
     },
     revalidate: 60 * 30, // 30 min in sec
   };
